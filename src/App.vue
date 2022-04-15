@@ -1,7 +1,7 @@
 <script setup>
 import {ref} from "vue";
 import socket from './service/ws';
-import peerConnection from "./service/rtc";
+import peerConnection, {channel} from "./service/rtc";
 
 const greeting = ref('');
 const message = ref('');
@@ -37,8 +37,19 @@ socket.on('greeting', onGreeting);
 socket.on('offer', onOffer);
 socket.on('answer', onAnswer);
 socket.on('candidate', onCandidate);
+
+function onChannelOpen() {
+
+}
+function onChannelClose() {
+
+}
+channel.addEventListener('open', onChannelOpen);
+channel.addEventListener('close', onChannelClose);
+
 peerConnection.addEventListener('icecandidate', ({candidate}) => {
-  socket.emit('candidate', candidate);
+  //socket.emit('candidate', candidate);
+  peerConnection.addIceCandidate(candidate);
 });
 
 
