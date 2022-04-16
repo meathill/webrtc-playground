@@ -12,17 +12,18 @@ const log = ref(['ws: connecting']);
 const webSocketGreeting = ref('');
 const channelStatus = ref('');
 const message = ref('');
-const messages = ref([]);
+const receivedMessages = ref([]);
 const messageBox = ref(null);
 
 const disabled = computed(() => {
-  return true;
+  return !isPcReady.value;
 });
 
 async function doConnectPc() {
   log.value.push('pc: making offer');
   isPcConnecting.value = true;
   peerConnection = createPeerConnection();
+  channel = createDataChannel();
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   log.value.push('pc: sending offer');
@@ -39,9 +40,15 @@ function doSendMessage() {
 }
 function onMessage(message) {
   if (message.data) {
-    message.value.push('[channel] ' + message.data);
+    const {data} = message;
+    if (data === '__hello__') {
+      isPcReady.value = true;
+    } else {
+      receivedMessages.value.push('[channel] ' + message.data);
+    }
+  } else {
+    receivedMessages.value.push(message);
   }
-  messages.value.push(message);
 }
 function onGreeting(msg) {
   webSocketGreeting.value = msg;
@@ -64,12 +71,10 @@ async function onAnswer(answer) {
   isPcConnecting.value = false;
   isPcReady.value = true;
   log.value.push('pc: ready');
-  channel = channel || createChannel();
 }
 async function onCandidate(candidate) {
-  const iceCandidate = new RTCIceCandidate(candidate);
-  await peerConnection.addIceCandidate(iceCandidate);
-  greeting.value = candidate;
+  await peerConnection.addIceCandidate(candidate);
+  log.value.push('pc: added candidate');
 }
 function onDataChannel(event) {
   channel = event.channel;
@@ -77,17 +82,23 @@ function onDataChannel(event) {
   channel.addEventListener('open', onChannelStatusChange);
   channel.addEventListener('close', onChannelStatusChange);
 }
-
+function onChannelStatusChange(event) {
+  log.value.push('channel state: ' + event.target.readyState);
+  channelStatus.value = event.target.readyState;
+  if (event.target.readyState === 'open' && !isPcReady.value) {
+    isPcConnecting.value = false;
+    isPcReady.value = true;
+  }
+}
 function createPeerConnection() {
   const peerConnection = new RTCPeerConnection(iceServers);
   peerConnection.addEventListener('icecandidate', ({candidate}) => {
-    //socket.emit('candidate', candidate);
-    peerConnection.addIceCandidate(candidate);
+    socket.emit('candidate', candidate);
   });
   peerConnection.addEventListener('datachannel', onDataChannel);
   return peerConnection;
 }
-function createChannel() {
+function createDataChannel() {
   const channel = peerConnection.createDataChannel('channel');
   channel.addEventListener('open', onChannelStatusChange);
   channel.addEventListener('close', onChannelStatusChange);
@@ -99,11 +110,6 @@ socket.on('greeting', onGreeting);
 socket.on('offer', onOffer);
 socket.on('answer', onAnswer);
 socket.on('candidate', onCandidate);
-
-function onChannelStatusChange(event) {
-  console.log('channel ' + event.name);
-  channelStatus.value = event.state;
-}
 </script>
 
 <template lang="pug">
@@ -127,8 +133,8 @@ function onChannelStatusChange(event) {
           span.badge.bg-success {{channelStatus}}
       pre.ms-2.px-2.border.rounded-2.flex-grow-1.mb-0.overflow-auto {{log.join('\n')}}
 
-    .p-2.rounded-2.border.my-2
-      p(v-for="item in messages") {{item}}
+    .chat-box.messages.p-2.rounded-2.border.my-2
+      p(v-for="item in receivedMessages") {{item}}
 
     form.border.p-2.d-flex(
       @submit.prevent="doSendMessage"
@@ -141,3 +147,14 @@ function onChannelStatusChange(event) {
         :disabled="disabled",
       ) Send
 </template>
+
+<style lang="stylus">
+.list-group-item
+  height 3rem
+
+pre
+  max-height 9rem
+
+.chat-box
+  min-height 5rem
+</style>
