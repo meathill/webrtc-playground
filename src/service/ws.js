@@ -1,5 +1,6 @@
-import io from 'socket.io-client';
 
-const socket = io('ws://10.77:4000');
+import config from '../config';
+
+const socket = io(config.ws);
 
 export default socket;

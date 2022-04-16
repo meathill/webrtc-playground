@@ -1,25 +1,57 @@
 <script setup>
 import {computed, ref} from "vue";
-import socket from './service/ws';
+import io from 'socket.io-client';
+import config from '@/config';
 import {iceServers} from "./data/config";
 
+let socket;
 let peerConnection;
 let channel;
 
+// ws
+const isWebSocketConnected = ref(false);
+const wsError = ref(null);
+const sockets = ref(null);
+const webSocketGreeting = ref('');
+const targetClient = ref(null);
+
+// peerConnection
 const isPcReady = ref(false);
 const isPcConnecting = ref(false);
+const nickname = ref('');
 const log = ref(['ws: connecting']);
-const webSocketGreeting = ref('');
 const channelStatus = ref('');
 const message = ref('');
 const receivedMessages = ref([]);
-const messageBox = ref(null);
+
+// dom refs
+const nicknameInput = ref(null);
+const messageInput = ref(null);
 
 const disabled = computed(() => {
-  return !isPcReady.value;
+  return !isPcReady.value || channelStatus.value !== 'open';
 });
 
-async function doConnectPc() {
+async function doConnectWebSocket() {
+  socket = io(config.ws);
+  socket.on('connect', async () => {
+    isWebSocketConnected.value = true;
+    socket.emit('set-name', nickname.value);
+  });
+  socket.on('disconnect', () => {
+    isWebSocketConnected.value = false;
+  });
+  socket.on('connect_error', (err) => {
+    wsError.value = err;
+  });
+  socket.on('message', onMessage);
+  socket.on('greeting', onGreeting);
+  socket.on('offer', onOffer);
+  socket.on('answer', onAnswer);
+  socket.on('candidate', onCandidate);
+  socket.on('sockets', onSockets);
+}
+async function doConnectPc(client) {
   log.value.push('pc: making offer');
   isPcConnecting.value = true;
   peerConnection = createPeerConnection();
@@ -27,7 +59,7 @@ async function doConnectPc() {
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   log.value.push('pc: sending offer');
-  socket.emit('offer', offer);
+  socket.emit('offer', offer, client.id);
 }
 function doSendMessage() {
   if (channel) {
@@ -38,6 +70,8 @@ function doSendMessage() {
   message.value = '';
   messageBox.value.focus();
 }
+
+// ws events
 function onMessage(message) {
   if (message.data) {
     const {data} = message;
@@ -54,15 +88,16 @@ function onGreeting(msg) {
   webSocketGreeting.value = msg;
   log.value.push('ws: connected: ' + msg);
 }
-async function onOffer(offer) {
+async function onOffer(offer, from) {
   log.value.push('pc: received offer');
+  targetClient.value = from;
   isPcConnecting.value = true;
   peerConnection = peerConnection || createPeerConnection();
   await peerConnection.setRemoteDescription(offer);
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
   log.value.push('pc: sending answer');
-  socket.emit('answer', answer);
+  socket.emit('answer', answer, from);
 }
 async function onAnswer(answer) {
   log.value.push('pc: received answer');
@@ -75,6 +110,14 @@ async function onAnswer(answer) {
 async function onCandidate(candidate) {
   await peerConnection.addIceCandidate(candidate);
   log.value.push('pc: added candidate');
+}
+function onSockets(data) {
+   sockets.value = data.map(item => {
+     return {
+       ...item,
+       isConnecting: false,
+     }
+   });
 }
 function onDataChannel(event) {
   channel = event.channel;
@@ -93,7 +136,8 @@ function onChannelStatusChange(event) {
 function createPeerConnection() {
   const peerConnection = new RTCPeerConnection(iceServers);
   peerConnection.addEventListener('icecandidate', ({candidate}) => {
-    socket.emit('candidate', candidate);
+    log.value.push('pc: sending candidate');
+    socket.emit('candidate', candidate, targetClient.value);
   });
   peerConnection.addEventListener('datachannel', onDataChannel);
   return peerConnection;
@@ -105,33 +149,56 @@ function createDataChannel() {
   channel.addEventListener('message', onMessage);
   return channel;
 }
-socket.on('message', onMessage);
-socket.on('greeting', onGreeting);
-socket.on('offer', onOffer);
-socket.on('answer', onAnswer);
-socket.on('candidate', onCandidate);
 </script>
 
 <template lang="pug">
 .container.pt-3
-  .w-50.mx-auto
-    .d-flex
-      .list-group.w-50
-        .list-group-item.d-flex.justify-content-between.align-items-center WebSocket:
-          span.badge.bg-success {{webSocketGreeting}}
-        .list-group-item.d-flex.justify-content-between.align-items-center PeerConnection:
-          span.badge.bg-success(v-if="isPcReady") ready
-          button.btn.btn-primary.btn-sm(
-            v-else,
-            type="button",
-            :disabled="isPcConnecting",
-            @click="doConnectPc",
-          )
-            span.spinner-border.spinner-border-sm.me-2(v-if="isPcConnecting")
-            | Connect
-        .list-group-item.d-flex.justify-content-between.align-items-center Channel:
-          span.badge.bg-success {{channelStatus}}
-      pre.ms-2.px-2.border.rounded-2.flex-grow-1.mb-0.overflow-auto {{log.join('\n')}}
+  .mx-auto.col-md-6
+    .list-group
+      form.list-group-item.d-flex.justify-content-between.align-items-center(
+        @submit.prevent="doConnectWebSocket",
+      )
+        label(for="nickname") Nickname:
+        input#nickname.form-control.form-control-sm.mx-2(
+          ref="nicknameInput",
+          v-model="nickname",
+          required,
+          placeholder="Enter your nickname",
+          :readonly="isWebSocketConnected",
+        )
+        .text-success(v-if="isWebSocketConnected") Connected
+        button.btn.btn-primary.btn-sm(
+          v-else,
+          :disabled="!nickname",
+        ) Connect
+      .list-group-item
+        .list-group.border.rounded-2.flex-grow-1
+          label.list-group-item.d-flex.justify-content-between.align-items-center(
+            v-for="item in sockets",
+            :class="{active: item.id === targetClient}",
+            :key="item.id",
+          ) {{item.nickname}}
+            input(
+              type="radio",
+              hidden,
+              :value="item.id",
+              v-model="targetClient",
+            )
+      .list-group-item.d-flex.justify-content-between.align-items-center PeerConnection:
+        span.badge.bg-success(v-if="isPcReady") ready
+        button.btn.btn-primary.btn-sm(
+          v-else,
+          type="button",
+          :disabled="!isWebSocketConnected || !targetClient",
+          @click="doConnectPc",
+        )
+          span.spinner-border.spinner-border-sm.me-2(v-if="isPcConnecting")
+          | Connect
+
+      .list-group-item.d-flex.justify-content-between.align-items-center Channel:
+        span.badge.bg-success {{channelStatus}}
+
+
 
     .chat-box.messages.p-2.rounded-2.border.my-2
       p(v-for="item in receivedMessages") {{item}}
@@ -139,21 +206,21 @@ socket.on('candidate', onCandidate);
     form.border.p-2.d-flex(
       @submit.prevent="doSendMessage"
     )
-      input.form-control(
-        ref="messageBox",
+      input.form-control.form-control-sm(
+        ref="messageInput",
         v-model="message",
       )
-      button.btn.btn-primary.ms-2(
+      button.btn.btn-primary.ms-2.btn-sm(
         :disabled="disabled",
       ) Send
+
+    pre.px-2.border.rounded-2.mb-0 {{log.join('\n')}}
 </template>
 
 <style lang="stylus">
-.list-group-item
-  height 3rem
-
 pre
-  max-height 9rem
+  max-height 12.5rem
+  overflow auto
 
 .chat-box
   min-height 5rem

@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 
+const config = require('../src/config');
 const {Server} = require('socket.io');
 const io = new Server(4000, {
   cors: {
-    origin: "http://10.0.0.77:3000",
+    origin: config.origin,
     methods: ["GET", "POST"]
   }
 });
 
-const clients = [];
+const clients = {};
+let index = 0;
 
 function onMessage(message) {
-  io.emit('message', message);
+  io.emit('message', message, index++);
 }
 
 io.on('connection', socket => {
-  socket.emit('greeting', 'hello');
+  socket.emit('greeting', 'hello', index++);
 
-  clients.push(socket);
+  clients[socket.id] = socket;
 
   function onDisconnect() {
     socket.off('message', onMessage);
@@ -25,21 +27,31 @@ io.on('connection', socket => {
     socket.off('offer', onOffer);
     socket.off('answer', onAnswer);
     socket.off('candidate', onCandidate);
-    clients.splice(clients.indexOf(socket), 1);
+    socket.off('set-name', onSetName);
+    delete clients[socket.id];
   }
 
-  function onOffer(offer) {
-    socket.broadcast.emit('offer', offer);
+  function onOffer(offer, id) {
+    clients[id].emit('offer', offer, socket.id, index++);
+    clients[id].data.offer = socket.id;
   }
 
-  function onAnswer(answer) {
-    socket.broadcast.emit('answer', answer);
+  function onAnswer(answer, from) {
+    clients[from].emit('answer', answer, index++);
+    clients[from].data.answer = socket.id;
   }
 
-  function onCandidate(candidate) {
-    socket.broadcast.emit('candidate', candidate);
+  function onCandidate(candidate, to) {
+    clients[to].emit('candidate', candidate, index++);
   }
 
+  async function onSetName(name) {
+    socket.data.nickname = name;
+    const sockets = await io.fetchSockets();
+    io.emit('sockets', sockets.map(({id, data}) => ({...data, id})), index++);
+  }
+
+  socket.on('set-name', onSetName);
   socket.on('message', onMessage);
   socket.on('offer', onOffer);
   socket.on('answer', onAnswer);
