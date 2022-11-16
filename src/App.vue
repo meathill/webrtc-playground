@@ -51,7 +51,7 @@ async function doConnectWebSocket() {
   socket.on('candidate', onCandidate);
   socket.on('sockets', onSockets);
 }
-async function doConnectPc(client) {
+async function doConnectPc() {
   log.value.push('pc: making offer');
   isPcConnecting.value = true;
   peerConnection = createPeerConnection();
@@ -59,7 +59,7 @@ async function doConnectPc(client) {
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   log.value.push('pc: sending offer');
-  socket.emit('offer', offer, client.id);
+  socket.emit('offer', offer, socket.id);
 }
 function doSendMessage() {
   if (channel) {
@@ -108,6 +108,7 @@ async function onAnswer(answer) {
   log.value.push('pc: ready');
 }
 async function onCandidate(candidate) {
+  peerConnection = peerConnection || createPeerConnection();
   await peerConnection.addIceCandidate(candidate);
   log.value.push('pc: added candidate');
 }
