@@ -1,12 +1,20 @@
 <script setup>
 import {computed, ref} from "vue";
-import io from 'socket.io-client';
-import config from '@/config';
+import ws from '@/service/ws';
 import {iceServers} from "./data/config";
 
-let socket;
 let peerConnection;
 let channel;
+
+ws.on('message', onMessage);
+ws.on('greeting', onGreeting);
+ws.on('offer', onOffer);
+ws.on('answer', onAnswer);
+ws.on('candidate', onCandidate);
+ws.on('sockets', onSockets);
+ws.on('connect', () => isWebSocketConnected.value = true);
+ws.on('disconnect', () => isWebSocketConnected.value = false);
+ws.on('error', () => wsError.value = ws.error);
 
 // ws
 const isWebSocketConnected = ref(false);
@@ -33,23 +41,7 @@ const disabled = computed(() => {
 });
 
 async function doConnectWebSocket() {
-  socket = io(config.ws);
-  socket.on('connect', async () => {
-    isWebSocketConnected.value = true;
-    socket.emit('set-name', nickname.value);
-  });
-  socket.on('disconnect', () => {
-    isWebSocketConnected.value = false;
-  });
-  socket.on('connect_error', (err) => {
-    wsError.value = err;
-  });
-  socket.on('message', onMessage);
-  socket.on('greeting', onGreeting);
-  socket.on('offer', onOffer);
-  socket.on('answer', onAnswer);
-  socket.on('candidate', onCandidate);
-  socket.on('sockets', onSockets);
+  ws.connect();
 }
 async function doConnectPc() {
   log.value.push('pc: making offer');
@@ -59,16 +51,20 @@ async function doConnectPc() {
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   log.value.push('pc: sending offer');
-  socket.emit('offer', offer, socket.id);
+  ws.sendOffer(offer);
 }
+
 function doSendMessage() {
   if (channel) {
     channel.send(message.value);
   } else {
-    socket.emit('message', message.value);
+    ws.send(message.value);
   }
   message.value = '';
-  messageBox.value.focus();
+}
+
+function onNicknameChange() {
+  ws.nickname = nickname.value;
 }
 
 // ws events
@@ -97,7 +93,7 @@ async function onOffer(offer, from) {
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
   log.value.push('pc: sending answer');
-  socket.emit('answer', answer, from);
+  ws.sendAnswer(answer, from);
 }
 async function onAnswer(answer) {
   log.value.push('pc: received answer');
@@ -138,7 +134,7 @@ function createPeerConnection() {
   const peerConnection = new RTCPeerConnection(iceServers);
   peerConnection.addEventListener('icecandidate', ({candidate}) => {
     log.value.push('pc: sending candidate');
-    socket.emit('candidate', candidate, targetClient.value);
+    ws.sendCandidate(candidate, targetClient.value);
   });
   peerConnection.addEventListener('datachannel', onDataChannel);
   return peerConnection;
@@ -166,6 +162,7 @@ function createDataChannel() {
           required,
           placeholder="Enter your nickname",
           :readonly="isWebSocketConnected",
+          @change="onNicknameChange",
         )
         .text-success(v-if="isWebSocketConnected") Connected
         button.btn.btn-primary.btn-sm(

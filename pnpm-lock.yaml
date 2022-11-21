@@ -4,6 +4,7 @@ specifiers:
   '@vitejs/plugin-vue': ^3.2.0
   bootstrap: ^5.2.2
   daisyui: ^2.41.0
+  eventemitter3: ^4.0.7
   pug: ^3.0.2
   socket.io: ^4.5.3
   socket.io-client: ^4.5.3
@@ -14,6 +15,7 @@ specifiers:
 dependencies:
   bootstrap: 5.2.2
   daisyui: 2.41.0
+  eventemitter3: 4.0.7
   socket.io: 4.5.3
   socket.io-client: 4.5.3
   vue: 3.2.45
@@ -695,6 +697,10 @@ packages:
 
   /estree-walker/2.0.2:
     resolution: {integrity: sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==}
+
+  /eventemitter3/4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+    dev: false
 
   /fast-glob/3.2.12:
     resolution: {integrity: sha512-DVj4CQIYYow0BlaelwK1pHl5n5cRSJfM60UA0zK891sVInoPri2Ekj7+e1CT3/3qxXenpI+nBBmQAcJPJgaj4w==}

@@ -45,8 +45,17 @@ io.on('connection', socket => {
     clients[to].emit('candidate', candidate, index++);
   }
 
-  async function onSetName(name) {
-    socket.data.nickname = name;
+  async function onSetName(nickname) {
+    socket.data.nickname = nickname;
+
+    // 断开同名连接
+    for (const id in clients) {
+      const client = clients[id];
+      if (client.data.nickname === nickname && client.id !== socket.id) {
+        client.disconnect();
+        break;
+      }
+    }
     const sockets = await io.fetchSockets();
     io.emit('sockets', sockets.map(({id, data}) => ({...data, id})), index++);
   }
